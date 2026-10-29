@@ -1,0 +1,340 @@
+import {
+  addDevice,
+  clampPosition,
+  createNetwork,
+  DEVICE_TYPES,
+  moveDevice,
+  removeDevice,
+} from "./network.js";
+import { renderDevices, updateDeviceElement } from "./render.js";
+
+const MOVE_STEP = 20;
+const GRID_COLUMNS = [110, 305, 500, 695, 890];
+const GRID_ROWS = [70, 185, 300, 415, 530];
+
+const network = createNetwork();
+const board = requireElement("#network-board");
+const deviceLayer = requireElement("#device-layer");
+const nameInput = requireElement("#device-name");
+const selectionEmpty = requireElement("#selection-empty");
+const selectionDetails = requireElement("#selection-details");
+const selectedName = requireElement("#selected-name");
+const selectedType = requireElement("#selected-type");
+const selectedPosition = requireElement("#selected-position");
+const deleteButton = requireElement("#delete-button");
+const statusMessage = requireElement("#status-message");
+
+let selectedDeviceId = null;
+let dragState = null;
+
+document.querySelectorAll("[data-add-type]").forEach(button => {
+  button.addEventListener("click", () => addDeviceFromPanel(button.dataset.addType));
+});
+
+document.querySelectorAll("[data-move]").forEach(button => {
+  button.addEventListener("click", () => moveSelectedDevice(button.dataset.move));
+});
+
+deleteButton.addEventListener("click", deleteSelectedDevice);
+board.addEventListener("pointerdown", handlePointerDown);
+board.addEventListener("pointermove", handlePointerMove);
+board.addEventListener("pointerup", finishPointerMove);
+board.addEventListener("pointercancel", finishPointerMove);
+board.addEventListener("lostpointercapture", finishPointerMove);
+board.addEventListener("keydown", handleBoardKeyDown);
+board.addEventListener("click", handleBoardClick);
+
+render();
+
+function addDeviceFromPanel(type) {
+  if (!Object.hasOwn(DEVICE_TYPES, type)) {
+    showError("Vybraný typ zařízení není podporován.");
+    return;
+  }
+
+  const position = findAvailablePosition();
+  if (!position) {
+    showError("Na ploše už není volné místo. Přesuň nebo odstraň některé zařízení.");
+    return;
+  }
+
+  const requestedName = nameInput.value.trim();
+  const name = requestedName || nextDefaultName(type);
+  try {
+    const device = addDevice(network, { type, name, ...position });
+    selectedDeviceId = device.id;
+    nameInput.value = "";
+    render();
+    showStatus(`Zařízení „${device.name}“ (${DEVICE_TYPES[type]}) bylo přidáno.`);
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+function findAvailablePosition() {
+  for (const y of GRID_ROWS) {
+    for (const x of GRID_COLUMNS) {
+      const isOccupied = network.nodes.some(device => (
+        Math.abs(device.x - x) < 180 && Math.abs(device.y - y) < 108
+      ));
+      if (!isOccupied) {
+        return clampPosition(x, y);
+      }
+    }
+  }
+  return null;
+}
+
+function nextDefaultName(type) {
+  const index = network.nodes.filter(device => device.type === type).length + 1;
+  return `${DEVICE_TYPES[type]} ${index}`;
+}
+
+function handlePointerDown(event) {
+  if (event.button !== 0 || !event.isPrimary) {
+    return;
+  }
+
+  const deviceElement = getDeviceElement(event.target);
+  if (!deviceElement) {
+    if (event.target === board.firstElementChild) {
+      selectDevice(null);
+    }
+    return;
+  }
+
+  event.preventDefault();
+  const device = getDevice(deviceElement.dataset.deviceId);
+  if (!device) {
+    showError("Vybrané zařízení už v síti neexistuje.");
+    return;
+  }
+
+  try {
+    deviceElement.setPointerCapture(event.pointerId);
+  } catch (error) {
+    showError(`Zařízení nelze přesunout: ${error.message}`);
+    return;
+  }
+
+  dragState = {
+    pointerId: event.pointerId,
+    deviceId: device.id,
+    element: deviceElement,
+  };
+  selectDevice(device.id);
+  showStatus(`Vybráno zařízení „${device.name}“.`);
+}
+
+function handlePointerMove(event) {
+  if (!dragState || dragState.pointerId !== event.pointerId) {
+    return;
+  }
+
+  event.preventDefault();
+  let position;
+  try {
+    position = screenToSvg(event.clientX, event.clientY);
+  } catch (error) {
+    showError(`Souřadnice ukazatele se nepodařilo převést: ${error.message}`);
+    return;
+  }
+  if (!position) {
+    showError("Souřadnice ukazatele se nepodařilo převést na plochu SVG.");
+    return;
+  }
+
+  try {
+    const device = moveDevice(network, dragState.deviceId, position.x, position.y);
+    updateDeviceElement(dragState.element, device, true);
+    updateSelectionDetails(device);
+  } catch (error) {
+    finishPointerMove(event);
+    showError(error.message);
+  }
+}
+
+function finishPointerMove(event) {
+  if (dragState && dragState.pointerId === event.pointerId) {
+    dragState = null;
+  }
+}
+
+function screenToSvg(clientX, clientY) {
+  const matrix = board.getScreenCTM();
+  if (!matrix) {
+    return null;
+  }
+
+  const point = board.createSVGPoint();
+  point.x = clientX;
+  point.y = clientY;
+  const transformed = point.matrixTransform(matrix.inverse());
+  if (!Number.isFinite(transformed.x) || !Number.isFinite(transformed.y)) {
+    return null;
+  }
+  return clampPosition(transformed.x, transformed.y);
+}
+
+function handleBoardKeyDown(event) {
+  const deviceElement = getDeviceElement(event.target);
+  if (!deviceElement) {
+    return;
+  }
+
+  const id = deviceElement.dataset.deviceId;
+  const device = getDevice(id);
+  if (!device) {
+    return;
+  }
+
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    selectDevice(id);
+    showStatus(`Vybráno zařízení „${device.name}“.`);
+    return;
+  }
+
+  if (event.key === "Delete" || event.key === "Backspace") {
+    event.preventDefault();
+    selectDevice(id);
+    deleteSelectedDevice();
+    return;
+  }
+
+  const directions = {
+    ArrowUp: [0, -MOVE_STEP],
+    ArrowDown: [0, MOVE_STEP],
+    ArrowLeft: [-MOVE_STEP, 0],
+    ArrowRight: [MOVE_STEP, 0],
+  };
+  const movement = directions[event.key];
+  if (movement) {
+    event.preventDefault();
+    selectDevice(id);
+    moveDeviceBy(movement[0], movement[1], true);
+  }
+}
+
+function handleBoardClick(event) {
+  if (event.target === board.firstElementChild) {
+    selectDevice(null);
+  }
+}
+
+function moveSelectedDevice(direction) {
+  const offsets = {
+    up: [0, -MOVE_STEP],
+    down: [0, MOVE_STEP],
+    left: [-MOVE_STEP, 0],
+    right: [MOVE_STEP, 0],
+  };
+  const offset = offsets[direction];
+  if (!offset) {
+    showError("Požadovaný směr přesunu není podporován.");
+    return;
+  }
+  moveDeviceBy(offset[0], offset[1], false);
+}
+
+function moveDeviceBy(dx, dy, restoreFocus) {
+  const device = getDevice(selectedDeviceId);
+  if (!device) {
+    showError("Nejprve vyber zařízení, které chceš přesunout.");
+    return;
+  }
+
+  try {
+    moveDevice(network, device.id, device.x + dx, device.y + dy);
+    render();
+    updateSelectionPanel();
+    if (restoreFocus) {
+      deviceLayer.querySelector(`[data-device-id="${device.id}"]`)?.focus();
+    }
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+function deleteSelectedDevice() {
+  if (!selectedDeviceId) {
+    showError("Nejprve vyber zařízení, které chceš odstranit.");
+    return;
+  }
+
+  try {
+    const removedName = getDevice(selectedDeviceId)?.name;
+    removeDevice(network, selectedDeviceId);
+    selectedDeviceId = null;
+    dragState = null;
+    render();
+    showStatus(`Zařízení „${removedName}“ bylo odstraněno.`);
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+function selectDevice(id) {
+  selectedDeviceId = id;
+  deviceLayer.querySelectorAll("[data-device-id]").forEach(element => {
+    const selected = element.dataset.deviceId === id;
+    element.classList.toggle("is-selected", selected);
+    element.setAttribute("aria-pressed", String(selected));
+  });
+  updateSelectionPanel();
+}
+
+function updateSelectionPanel() {
+  const device = getDevice(selectedDeviceId);
+  const isSelected = Boolean(device);
+  selectionEmpty.hidden = isSelected;
+  selectionDetails.hidden = !isSelected;
+  deleteButton.disabled = !isSelected;
+  document.querySelectorAll("[data-move]").forEach(button => {
+    button.disabled = !isSelected;
+  });
+
+  if (device) {
+    updateSelectionDetails(device);
+  }
+}
+
+function updateSelectionDetails(device) {
+  selectedName.textContent = device.name;
+  selectedType.textContent = DEVICE_TYPES[device.type];
+  selectedPosition.textContent = `${Math.round(device.x)}, ${Math.round(device.y)}`;
+}
+
+function render() {
+  renderDevices(deviceLayer, network, selectedDeviceId);
+  updateSelectionPanel();
+}
+
+function getDevice(id) {
+  return network.nodes.find(device => device.id === id);
+}
+
+function getDeviceElement(target) {
+  if (!(target instanceof Element)) {
+    return null;
+  }
+  return target.closest("[data-device-id]");
+}
+
+function showStatus(message) {
+  statusMessage.textContent = message;
+  statusMessage.classList.remove("is-error");
+}
+
+function showError(message) {
+  statusMessage.textContent = message;
+  statusMessage.classList.add("is-error");
+}
+
+function requireElement(selector) {
+  const element = document.querySelector(selector);
+  if (!element) {
+    throw new Error(`Chybí očekávaný prvek rozhraní: ${selector}.`);
+  }
+  return element;
+}

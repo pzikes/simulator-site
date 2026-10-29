@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Pracovní plocha pro sestavení počítačové sítě."
+    >
+    <title>Simulátor počítačové sítě</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="src/main.js"></script>
+  </head>
+  <body>
+    <main class="app">
+      <header class="page-header">
+        <p class="eyebrow">Informatika · interaktivní simulátor</p>
+        <h1>Simulátor počítačové sítě</h1>
+        <p class="intro">
+          Přidej zařízení na pracovní plochu, vyber je a uspořádej svou síť.
+        </p>
+      </header>
+
+      <div class="workspace">
+        <aside class="panel controls" aria-labelledby="devices-heading">
+          <h2 id="devices-heading">Přidat zařízení</h2>
+          <label for="device-name">Název zařízení</label>
+          <input
+            id="device-name"
+            type="text"
+            maxlength="24"
+            autocomplete="off"
+            placeholder="Např. Počítač 1"
+          >
+          <p class="field-hint">Nepovinný, nejvýše 24 znaků.</p>
+
+          <div class="add-buttons" aria-label="Typ zařízení">
+            <button class="button button-add" data-add-type="computer" type="button">
+              <span class="device-key device-key--computer" aria-hidden="true">PC</span>
+              Počítač
+            </button>
+            <button class="button button-add" data-add-type="switch" type="button">
+              <span class="device-key device-key--switch" aria-hidden="true">SW</span>
+              Switch
+            </button>
+            <button class="button button-add" data-add-type="router" type="button">
+              <span class="device-key device-key--router" aria-hidden="true">RT</span>
+              Router
+            </button>
+            <button class="button button-add" data-add-type="server" type="button">
+              <span class="device-key device-key--server" aria-hidden="true">SRV</span>
+              Server
+            </button>
+          </div>
+
+          <section class="selection" aria-labelledby="selection-heading">
+            <h2 id="selection-heading">Vybrané zařízení</h2>
+            <p id="selection-empty">Zatím není vybráno žádné zařízení.</p>
+            <dl id="selection-details" hidden>
+              <div>
+                <dt>Název</dt>
+                <dd id="selected-name"></dd>
+              </div>
+              <div>
+                <dt>Typ</dt>
+                <dd id="selected-type"></dd>
+              </div>
+              <div>
+                <dt>Pozice</dt>
+                <dd id="selected-position"></dd>
+              </div>
+            </dl>
+            <div class="move-controls" aria-label="Přesunout vybrané zařízení">
+              <button class="button button-secondary" data-move="up" type="button" disabled>
+                Nahoru
+              </button>
+              <button class="button button-secondary" data-move="left" type="button" disabled>
+                Vlevo
+              </button>
+              <button class="button button-secondary" data-move="right" type="button" disabled>
+                Vpravo
+              </button>
+              <button class="button button-secondary" data-move="down" type="button" disabled>
+                Dolů
+              </button>
+            </div>
+            <button id="delete-button" class="button button-danger" type="button" disabled>
+              Odstranit vybrané zařízení
+            </button>
+          </section>
+
+          <p id="status-message" class="status-message" role="status" aria-live="polite">
+            Přidej zařízení nebo vyber některé na ploše.
+          </p>
+        </aside>
+
+        <section class="panel board-panel" aria-labelledby="board-heading">
+          <div class="board-heading">
+            <div>
+              <h2 id="board-heading">Pracovní plocha</h2>
+              <p>Kliknutím zařízení vybereš, tažením myši nebo prstem ho přesuneš.</p>
+            </div>
+            <span class="board-size">1000 × 600</span>
+          </div>
+          <svg
+            id="network-board"
+            class="network-board"
+            viewBox="0 0 1000 600"
+            preserveAspectRatio="xMidYMid meet"
+            role="group"
+            aria-label="Pracovní plocha počítačové sítě"
+            aria-describedby="keyboard-help"
+          >
+            <rect class="board-background" x="0" y="0" width="1000" height="600"></rect>
+            <g id="device-layer"></g>
+          </svg>
+          <p id="keyboard-help" class="keyboard-help">
+            Klávesnice: Tab přejde na zařízení, Enter nebo mezerník ho vybere,
+            šipky ho posunou a Delete ho odstraní. Zařízení lze také posouvat
+            pomocí tlačítek v panelu.
+          </p>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
