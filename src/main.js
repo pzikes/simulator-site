@@ -1,12 +1,19 @@
 import {
   addDevice,
   clampPosition,
+  connectDevices,
   createNetwork,
   DEVICE_TYPES,
   moveDevice,
+  removeConnection,
   removeDevice,
 } from "./network.js";
-import { renderDevices, updateDeviceElement } from "./render.js";
+import {
+  renderConnections,
+  renderDevices,
+  updateConnectionPositions,
+  updateDeviceElement,
+} from "./render.js";
 
 const MOVE_STEP = 20;
 const GRID_COLUMNS = [110, 305, 500, 695, 890];
@@ -14,8 +21,12 @@ const GRID_ROWS = [70, 185, 300, 415, 530];
 
 const network = createNetwork();
 const board = requireElement("#network-board");
+const connectionLayer = requireElement("#connection-layer");
 const deviceLayer = requireElement("#device-layer");
 const nameInput = requireElement("#device-name");
+const connectionModeButton = requireElement("#connection-mode-button");
+const connectionModeHelp = requireElement("#connection-mode-help");
+const deleteConnectionButton = requireElement("#delete-connection-button");
 const selectionEmpty = requireElement("#selection-empty");
 const selectionDetails = requireElement("#selection-details");
 const selectedName = requireElement("#selected-name");
@@ -25,6 +36,9 @@ const deleteButton = requireElement("#delete-button");
 const statusMessage = requireElement("#status-message");
 
 let selectedDeviceId = null;
+let selectedConnectionId = null;
+let connectionMode = false;
+let pendingConnectionStartId = null;
 let dragState = null;
 
 document.querySelectorAll("[data-add-type]").forEach(button => {
@@ -36,6 +50,8 @@ document.querySelectorAll("[data-move]").forEach(button => {
 });
 
 deleteButton.addEventListener("click", deleteSelectedDevice);
+connectionModeButton.addEventListener("click", () => toggleConnectionMode());
+deleteConnectionButton.addEventListener("click", deleteSelectedConnection);
 board.addEventListener("pointerdown", handlePointerDown);
 board.addEventListener("pointermove", handlePointerMove);
 board.addEventListener("pointerup", finishPointerMove);
@@ -103,6 +119,10 @@ function handlePointerDown(event) {
     return;
   }
 
+  if (connectionMode) {
+    return;
+  }
+
   event.preventDefault();
   const device = getDevice(deviceElement.dataset.deviceId);
   if (!device) {
@@ -147,6 +167,7 @@ function handlePointerMove(event) {
   try {
     const device = moveDevice(network, dragState.deviceId, position.x, position.y);
     updateDeviceElement(dragState.element, device, true);
+    updateConnectionPositions(connectionLayer, network);
     updateSelectionDetails(device);
   } catch (error) {
     finishPointerMove(event);
@@ -177,8 +198,29 @@ function screenToSvg(clientX, clientY) {
 }
 
 function handleBoardKeyDown(event) {
+  const connectionElement = getConnectionElement(event.target);
+  if (connectionElement) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectConnection(connectionElement.dataset.connectionId);
+      return;
+    }
+    if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      selectConnection(connectionElement.dataset.connectionId);
+      deleteSelectedConnection();
+      return;
+    }
+  }
+
   const deviceElement = getDeviceElement(event.target);
   if (!deviceElement) {
+    return;
+  }
+
+  if (event.key === "Escape" && connectionMode) {
+    event.preventDefault();
+    toggleConnectionMode(false);
     return;
   }
 
@@ -190,8 +232,12 @@ function handleBoardKeyDown(event) {
 
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    selectDevice(id);
-    showStatus(`Vybráno zařízení „${device.name}“.`);
+    if (connectionMode) {
+      handleConnectionEndpoint(id);
+    } else {
+      selectDevice(id);
+      showStatus(`Vybráno zařízení „${device.name}“.`);
+    }
     return;
   }
 
@@ -209,7 +255,7 @@ function handleBoardKeyDown(event) {
     ArrowRight: [MOVE_STEP, 0],
   };
   const movement = directions[event.key];
-  if (movement) {
+  if (movement && !connectionMode) {
     event.preventDefault();
     selectDevice(id);
     moveDeviceBy(movement[0], movement[1], true);
@@ -217,8 +263,79 @@ function handleBoardKeyDown(event) {
 }
 
 function handleBoardClick(event) {
+  const connectionElement = getConnectionElement(event.target);
+  if (connectionElement) {
+    if (connectionMode) {
+      showStatus("Vypni režim propojení, pokud chceš vybrat nebo odstranit kabel.");
+      return;
+    }
+    selectConnection(connectionElement.dataset.connectionId);
+    return;
+  }
+
+  const deviceElement = getDeviceElement(event.target);
+  if (deviceElement) {
+    const id = deviceElement.dataset.deviceId;
+    if (connectionMode) {
+      handleConnectionEndpoint(id);
+    } else {
+      selectDevice(id);
+      showStatus(`Vybráno zařízení „${getDevice(id)?.name}“.`);
+    }
+    return;
+  }
+
   if (event.target === board.firstElementChild) {
     selectDevice(null);
+    selectConnection(null);
+  }
+}
+
+function toggleConnectionMode(forceState = !connectionMode) {
+  connectionMode = forceState;
+  pendingConnectionStartId = null;
+  selectedConnectionId = null;
+  connectionModeButton.setAttribute("aria-pressed", String(connectionMode));
+  connectionModeButton.textContent = connectionMode
+    ? "Vypnout režim propojení"
+    : "Zapnout režim propojení";
+  connectionModeHelp.textContent = connectionMode
+    ? "Vyber první a potom druhé zařízení. Režim můžeš zrušit klávesou Escape."
+    : "Zapni režim, potom vyber dvě různá zařízení.";
+  updateConnectionSelection();
+  renderConnections(connectionLayer, network, selectedConnectionId);
+
+  if (connectionMode) {
+    showStatus("Režim propojení zapnut. Vyber první zařízení.");
+  } else {
+    showStatus("Režim propojení vypnut.");
+  }
+}
+
+function handleConnectionEndpoint(id) {
+  const device = getDevice(id);
+  if (!device) {
+    showError("Vybrané zařízení už v síti neexistuje.");
+    return;
+  }
+
+  if (!pendingConnectionStartId) {
+    pendingConnectionStartId = id;
+    selectDevice(id);
+    showStatus(`První zařízení: „${device.name}“. Teď vyber druhé zařízení.`);
+    return;
+  }
+
+  try {
+    connectDevices(network, pendingConnectionStartId, id);
+    const start = getDevice(pendingConnectionStartId);
+    pendingConnectionStartId = null;
+    selectedConnectionId = null;
+    renderConnections(connectionLayer, network, selectedConnectionId);
+    updateConnectionSelection();
+    showStatus(`Kabel mezi „${start.name}“ a „${device.name}“ byl vytvořen.`);
+  } catch (error) {
+    showError(error.message);
   }
 }
 
@@ -263,9 +380,14 @@ function deleteSelectedDevice() {
   }
 
   try {
-    const removedName = getDevice(selectedDeviceId)?.name;
-    removeDevice(network, selectedDeviceId);
+    const removedDeviceId = selectedDeviceId;
+    const removedName = getDevice(removedDeviceId)?.name;
+    removeDevice(network, removedDeviceId);
     selectedDeviceId = null;
+    selectedConnectionId = null;
+    if (pendingConnectionStartId === removedDeviceId) {
+      pendingConnectionStartId = null;
+    }
     dragState = null;
     render();
     showStatus(`Zařízení „${removedName}“ bylo odstraněno.`);
@@ -274,14 +396,57 @@ function deleteSelectedDevice() {
   }
 }
 
+function deleteSelectedConnection() {
+  if (!selectedConnectionId) {
+    showError("Nejprve vyber kabel, který chceš odstranit.");
+    return;
+  }
+
+  try {
+    const connection = network.edges.find(edge => edge.id === selectedConnectionId);
+    if (!connection) {
+      throw new RangeError(`Spojení s ID ${selectedConnectionId} neexistuje.`);
+    }
+    const from = getDevice(connection.from);
+    const to = getDevice(connection.to);
+    removeConnection(network, selectedConnectionId);
+    selectedConnectionId = null;
+    renderConnections(connectionLayer, network, selectedConnectionId);
+    updateConnectionSelection();
+    showStatus(`Kabel mezi „${from.name}“ a „${to.name}“ byl odstraněn.`);
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
 function selectDevice(id) {
   selectedDeviceId = id;
+  selectedConnectionId = null;
   deviceLayer.querySelectorAll("[data-device-id]").forEach(element => {
     const selected = element.dataset.deviceId === id;
     element.classList.toggle("is-selected", selected);
     element.setAttribute("aria-pressed", String(selected));
   });
+  updateConnectionSelection();
   updateSelectionPanel();
+}
+
+function selectConnection(id) {
+  selectedConnectionId = id;
+  updateConnectionSelection();
+  const connection = network.edges.find(edge => edge.id === id);
+  if (connection) {
+    showStatus("Kabel vybrán. Můžeš ho odstranit tlačítkem v panelu.");
+  }
+}
+
+function updateConnectionSelection() {
+  connectionLayer.querySelectorAll("[data-connection-id]").forEach(element => {
+    const selected = element.dataset.connectionId === selectedConnectionId;
+    element.classList.toggle("is-selected", selected);
+    element.setAttribute("aria-pressed", String(selected));
+  });
+  deleteConnectionButton.disabled = !selectedConnectionId || connectionMode;
 }
 
 function updateSelectionPanel() {
@@ -306,7 +471,9 @@ function updateSelectionDetails(device) {
 }
 
 function render() {
+  renderConnections(connectionLayer, network, selectedConnectionId);
   renderDevices(deviceLayer, network, selectedDeviceId);
+  updateConnectionSelection();
   updateSelectionPanel();
 }
 
@@ -319,6 +486,13 @@ function getDeviceElement(target) {
     return null;
   }
   return target.closest("[data-device-id]");
+}
+
+function getConnectionElement(target) {
+  if (!(target instanceof Element)) {
+    return null;
+  }
+  return target.closest("[data-connection-id]");
 }
 
 function showStatus(message) {

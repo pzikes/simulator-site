@@ -17,6 +17,7 @@ export const DEVICE_TYPES = Object.freeze({
 
 const MAX_NAME_LENGTH = 24;
 let nextDeviceId = 0;
+let nextConnectionId = 0;
 
 export function createNetwork() {
   return {
@@ -89,6 +90,48 @@ export function removeDevice(network, id) {
 
   const [removed] = network.nodes.splice(index, 1);
   network.edges = network.edges.filter(edge => edge.from !== id && edge.to !== id);
+  return removed;
+}
+
+export function connectDevices(network, firstDeviceId, secondDeviceId) {
+  assertNetwork(network);
+
+  if (firstDeviceId === secondDeviceId) {
+    throw new RangeError("Zařízení nelze propojit samo se sebou.");
+  }
+
+  const firstExists = network.nodes.some(device => device.id === firstDeviceId);
+  const secondExists = network.nodes.some(device => device.id === secondDeviceId);
+  if (!firstExists || !secondExists) {
+    throw new RangeError("Obě zařízení musí v síti existovat.");
+  }
+
+  const duplicate = network.edges.some(edge => (
+    (edge.from === firstDeviceId && edge.to === secondDeviceId)
+    || (edge.from === secondDeviceId && edge.to === firstDeviceId)
+  ));
+  if (duplicate) {
+    throw new RangeError("Tato zařízení už jsou propojena.");
+  }
+
+  nextConnectionId += 1;
+  const connection = {
+    id: `connection-${nextConnectionId}`,
+    from: firstDeviceId,
+    to: secondDeviceId,
+  };
+  network.edges.push(connection);
+  return connection;
+}
+
+export function removeConnection(network, id) {
+  assertNetwork(network);
+  const index = network.edges.findIndex(connection => connection.id === id);
+  if (index === -1) {
+    throw new RangeError(`Spojení s ID ${id} neexistuje.`);
+  }
+
+  const [removed] = network.edges.splice(index, 1);
   return removed;
 }
 

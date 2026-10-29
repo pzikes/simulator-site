@@ -31,6 +31,34 @@ export function renderDevices(layer, network, selectedDeviceId) {
   layer.replaceChildren(...elements);
 }
 
+export function renderConnections(layer, network, selectedConnectionId) {
+  const devicesById = new Map(network.nodes.map(device => [device.id, device]));
+  const elements = network.edges.map(connection => {
+    const from = devicesById.get(connection.from);
+    const to = devicesById.get(connection.to);
+    if (!from || !to) {
+      throw new Error(`Spojení ${connection.id} odkazuje na neexistující zařízení.`);
+    }
+
+    return createConnectionElement(connection, from, to, connection.id === selectedConnectionId);
+  });
+  layer.replaceChildren(...elements);
+}
+
+export function updateConnectionPositions(layer, network) {
+  const devicesById = new Map(network.nodes.map(device => [device.id, device]));
+  layer.querySelectorAll("[data-connection-id]").forEach(element => {
+    const connection = network.edges.find(edge => edge.id === element.dataset.connectionId);
+    const from = connection && devicesById.get(connection.from);
+    const to = connection && devicesById.get(connection.to);
+    if (!connection || !from || !to) {
+      throw new Error(`Nelze aktualizovat neplatné spojení ${element.dataset.connectionId}.`);
+    }
+
+    setConnectionEndpoints(element, from, to);
+  });
+}
+
 export function updateDeviceElement(element, device, selected = false) {
   element.setAttribute("transform", `translate(${device.x} ${device.y})`);
   element.setAttribute(
@@ -44,6 +72,36 @@ export function updateDeviceElement(element, device, selected = false) {
 
   const title = element.querySelector("title");
   title.textContent = `${device.name} — ${DEVICE_TYPES[device.type]}`;
+}
+
+function createConnectionElement(connection, from, to, selected) {
+  const element = createSvgElement("g", {
+    class: `connection${selected ? " is-selected" : ""}`,
+    "data-connection-id": connection.id,
+    role: "button",
+    tabindex: "0",
+    "aria-pressed": String(selected),
+    "aria-label": `Kabel mezi ${from.name} a ${to.name}`,
+  });
+  const visibleLine = createSvgElement("line", {
+    class: "connection-line",
+  });
+  const hitArea = createSvgElement("line", {
+    class: "connection-hit-area",
+    "aria-hidden": "true",
+  });
+  element.append(visibleLine, hitArea);
+  setConnectionEndpoints(element, from, to);
+  return element;
+}
+
+function setConnectionEndpoints(element, from, to) {
+  for (const line of element.children) {
+    line.setAttribute("x1", String(from.x));
+    line.setAttribute("y1", String(from.y));
+    line.setAttribute("x2", String(to.x));
+    line.setAttribute("y2", String(to.y));
+  }
 }
 
 function createDeviceElement(device, selected) {

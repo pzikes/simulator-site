@@ -18,9 +18,11 @@ Otevři `http://localhost:8000`. ES moduly nefungují spolehlivě při otevřen�
 - Název zařízení můžeš zadat před přidáním; jinak se vytvoří automaticky.
 - Zařízení vybereš kliknutím. Myší, dotykem nebo tlačítky se šipkami v panelu ho můžeš přesunout.
 - Vybrané zařízení odstraníš tlačítkem v panelu.
-- Klávesnice: Tab přejde na zařízení, Enter nebo mezerník ho vybere, šipky ho posunou a Delete ho odstraní.
+- Kabel vytvoříš zapnutím režimu propojení a výběrem dvou zařízení. Spojení jsou neorientovaná; opakovaný kabel ani připojení zařízení k sobě není povoleno.
+- Kabel vybereš kliknutím na jeho spojnici a odstraníš tlačítkem **Odstranit vybraný kabel**. Při odstranění zařízení se odstraní i jeho kabely.
+- Klávesnice: Tab přejde na zařízení, Enter nebo mezerník ho vybere, šipky ho posunou a Delete ho odstraní. V režimu propojení Enter nebo mezerník vybírá koncová zařízení; Escape režim ukončí. Kabel lze také vybrat klávesnicí a odstranit klávesou Delete nebo tlačítkem v panelu.
 
-Pracovní plocha používá pevný SVG `viewBox` 1000 × 600. Souřadnice zařízení zůstávají uvnitř plochy i při přesouvání. Každé zařízení je uloženo v modelu odděleném od DOM jako uzel s unikátním ID, typem, názvem a souřadnicemi. Model má také pole hran připravené pro další etapu; kabely ani přenos paketů zatím aplikace neimplementuje.
+Pracovní plocha používá pevný SVG `viewBox` 1000 × 600. Souřadnice zařízení zůstávají uvnitř plochy i při přesouvání. Každé zařízení je uloženo v modelu odděleném od DOM jako uzel s unikátním ID, typem, názvem a souřadnicemi. Kabely jsou neorientované hrany s ID koncových zařízení; jejich vykreslené pozice se aktualizují při přesunu zařízení. Simulace přenosu paketů zatím není implementována.
 
 ## Testy
 
@@ -30,4 +32,4 @@ Testy používají vestavěný nástroj Node.js `node:test` a nevyžadují insta
 npm.cmd test
 ```
 
-Pokryto je vytváření a validace uzlů, unikátní ID, ohraničení souřadnic, přesun a odstraňování uzlů včetně navázaných hran.
+Pokryto je vytváření a validace uzlů a spojení, unikátní ID, odmítnutí smyček a duplicitních kabelů bez ohledu na pořadí konců, ohraničení souřadnic, přesun a odstraňování zařízení včetně navázaných kabelů.

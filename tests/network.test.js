@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   addDevice,
+  connectDevices,
   createNetwork,
   DEVICE_TYPES,
   moveDevice,
+  removeConnection,
   removeDevice,
 } from "../src/network.js";
 
@@ -115,13 +117,100 @@ test("removeDevice deletes its connected edges and rejects an unknown node", () 
     x: 500,
     y: 100,
   });
-  network.edges.push(
-    { id: "edge-1", from: first.id, to: second.id },
-    { id: "edge-2", from: second.id, to: third.id },
-  );
+  connectDevices(network, first.id, second.id);
+  connectDevices(network, second.id, third.id);
 
   assert.equal(removeDevice(network, second.id), second);
   assert.deepEqual(network.nodes.map(node => node.id), [first.id, third.id]);
   assert.deepEqual(network.edges, []);
   assert.throws(() => removeDevice(network, second.id), RangeError);
+});
+
+test("connectDevices creates an undirected connection using device IDs", () => {
+  const network = createNetwork();
+  const first = addDevice(network, {
+    type: "computer",
+    name: "Stejný název",
+    x: 100,
+    y: 100,
+  });
+  const second = addDevice(network, {
+    type: "server",
+    name: "Stejný název",
+    x: 300,
+    y: 100,
+  });
+
+  const connection = connectDevices(network, first.id, second.id);
+
+  assert.equal(connection.from, first.id);
+  assert.equal(connection.to, second.id);
+  assert.notEqual(connection.id, first.id);
+  assert.notEqual(connection.id, second.id);
+  assert.deepEqual(network.edges, [connection]);
+});
+
+test("connectDevices rejects self-connections and duplicate endpoints in either order", () => {
+  const network = createNetwork();
+  const first = addDevice(network, {
+    type: "computer",
+    name: "PC",
+    x: 100,
+    y: 100,
+  });
+  const second = addDevice(network, {
+    type: "switch",
+    name: "Switch",
+    x: 300,
+    y: 100,
+  });
+
+  assert.throws(() => connectDevices(network, first.id, first.id), /samo se sebou/);
+  connectDevices(network, first.id, second.id);
+  assert.throws(
+    () => connectDevices(network, second.id, first.id),
+    /už jsou propojena/,
+  );
+  assert.equal(network.edges.length, 1);
+});
+
+test("connectDevices rejects IDs that do not identify existing devices", () => {
+  const network = createNetwork();
+  const first = addDevice(network, {
+    type: "computer",
+    name: "PC",
+    x: 100,
+    y: 100,
+  });
+
+  assert.throws(() => connectDevices(network, first.id, "missing"), /musí v síti existovat/);
+  assert.deepEqual(network.edges, []);
+});
+
+test("removeConnection deletes only the selected cable", () => {
+  const network = createNetwork();
+  const first = addDevice(network, {
+    type: "computer",
+    name: "PC 1",
+    x: 100,
+    y: 100,
+  });
+  const second = addDevice(network, {
+    type: "switch",
+    name: "Switch",
+    x: 300,
+    y: 100,
+  });
+  const third = addDevice(network, {
+    type: "server",
+    name: "Server",
+    x: 500,
+    y: 100,
+  });
+  const firstConnection = connectDevices(network, first.id, second.id);
+  const secondConnection = connectDevices(network, second.id, third.id);
+
+  assert.equal(removeConnection(network, firstConnection.id), firstConnection);
+  assert.deepEqual(network.edges, [secondConnection]);
+  assert.throws(() => removeConnection(network, firstConnection.id), RangeError);
 });

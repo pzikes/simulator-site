@@ -53,6 +53,29 @@
             </button>
           </div>
 
+          <section class="connection-controls" aria-labelledby="connections-heading">
+            <h2 id="connections-heading">Kabelová spojení</h2>
+            <button
+              id="connection-mode-button"
+              class="button button-secondary connection-mode-button"
+              type="button"
+              aria-pressed="false"
+            >
+              Zapnout režim propojení
+            </button>
+            <p id="connection-mode-help" class="field-hint">
+              Zapni režim, potom vyber dvě různá zařízení.
+            </p>
+            <button
+              id="delete-connection-button"
+              class="button button-danger"
+              type="button"
+              disabled
+            >
+              Odstranit vybraný kabel
+            </button>
+          </section>
+
           <section class="selection" aria-labelledby="selection-heading">
             <h2 id="selection-heading">Vybrané zařízení</h2>
             <p id="selection-empty">Zatím není vybráno žádné zařízení.</p>
@@ -112,12 +135,14 @@
             aria-describedby="keyboard-help"
           >
             <rect class="board-background" x="0" y="0" width="1000" height="600"></rect>
+            <g id="connection-layer"></g>
             <g id="device-layer"></g>
           </svg>
           <p id="keyboard-help" class="keyboard-help">
             Klávesnice: Tab přejde na zařízení, Enter nebo mezerník ho vybere,
-            šipky ho posunou a Delete ho odstraní. Zařízení lze také posouvat
-            pomocí tlačítek v panelu.
+            šipky ho posunou a Delete ho odstraní. V režimu propojení vyber
+            dvakrát zařízení; kabel vybereš kliknutím a smažeš tlačítkem.
+            Zařízení lze také posouvat pomocí tlačítek v panelu.
           </p>
         </section>
       </div>
