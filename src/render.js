@@ -59,6 +59,111 @@ export function updateConnectionPositions(layer, network) {
   });
 }
 
+export function setPathHighlight(layer, edges, path, highlighted) {
+  const pathPairs = new Set();
+  for (let index = 1; index < path.length; index += 1) {
+    pathPairs.add(connectionKey(path[index - 1], path[index]));
+  }
+
+  for (const edge of edges) {
+    const element = layer.querySelector(`[data-connection-id="${edge.id}"]`);
+    if (element && pathPairs.has(connectionKey(edge.from, edge.to))) {
+      element.classList.toggle("is-on-path", highlighted);
+    }
+  }
+}
+
+export function setVisitedDevices(layer, visitedIds) {
+  const visited = new Set(visitedIds);
+  layer.querySelectorAll("[data-device-id]").forEach(element => {
+    element.classList.toggle("is-packet-visited", visited.has(element.dataset.deviceId));
+  });
+}
+
+export function animatePacket(layer, nodes, edges, path, {
+  onVisit = () => {},
+  onComplete = () => {},
+  durationPerEdge = 550,
+} = {}) {
+  if (!Array.isArray(nodes) || !Array.isArray(edges) || !Array.isArray(path) || path.length < 2) {
+    throw new TypeError("Animace vyžaduje uzly, spojení a cestu s alespoň dvěma zařízeními.");
+  }
+  if (!Number.isFinite(durationPerEdge) || durationPerEdge <= 0) {
+    throw new RangeError("Délka animace každého kabelu musí být kladná.");
+  }
+
+  const devicesById = new Map(nodes.map(device => [device.id, device]));
+  const pathDevices = path.map(id => devicesById.get(id));
+  if (pathDevices.some(device => !device)) {
+    throw new RangeError("Cesta obsahuje zařízení, které v síti neexistuje.");
+  }
+
+  for (let index = 1; index < path.length; index += 1) {
+    const connected = edges.some(edge => (
+      (edge.from === path[index - 1] && edge.to === path[index])
+      || (edge.to === path[index - 1] && edge.from === path[index])
+    ));
+    if (!connected) {
+      throw new RangeError("Cesta obsahuje dvojici zařízení bez kabelového spojení.");
+    }
+  }
+
+  const packet = createSvgElement("circle", {
+    class: "packet-marker",
+    r: "10",
+    "aria-hidden": "true",
+  });
+  layer.replaceChildren(packet);
+
+  let segmentIndex = 0;
+  let segmentStart = null;
+  let animationFrame = null;
+  let finished = false;
+  onVisit(pathDevices[0], 0);
+
+  const finish = cancelled => {
+    if (finished) {
+      return;
+    }
+    finished = true;
+    if (animationFrame !== null) {
+      cancelAnimationFrame(animationFrame);
+    }
+    packet.remove();
+    onComplete({ cancelled });
+  };
+
+  const animateFrame = timestamp => {
+    if (finished) {
+      return;
+    }
+    if (segmentStart === null) {
+      segmentStart = timestamp;
+    }
+
+    const progress = Math.min(1, (timestamp - segmentStart) / durationPerEdge);
+    const from = pathDevices[segmentIndex];
+    const to = pathDevices[segmentIndex + 1];
+    packet.setAttribute("cx", String(from.x + (to.x - from.x) * progress));
+    packet.setAttribute("cy", String(from.y + (to.y - from.y) * progress));
+
+    if (progress === 1) {
+      segmentIndex += 1;
+      onVisit(pathDevices[segmentIndex], segmentIndex);
+      if (segmentIndex === pathDevices.length - 1) {
+        finish(false);
+        return;
+      }
+      segmentStart = null;
+    }
+
+    animationFrame = requestAnimationFrame(animateFrame);
+  };
+
+  animationFrame = requestAnimationFrame(animateFrame);
+  return () => finish(true);
+}
+
 export function updateDeviceElement(element, device, selected = false) {
   element.setAttribute("transform", `translate(${device.x} ${device.y})`);
   element.setAttribute(
@@ -102,6 +207,10 @@ function setConnectionEndpoints(element, from, to) {
     line.setAttribute("x2", String(to.x));
     line.setAttribute("y2", String(to.y));
   }
+}
+
+function connectionKey(firstId, secondId) {
+  return [firstId, secondId].sort().join("\u0000");
 }
 
 function createDeviceElement(device, selected) {

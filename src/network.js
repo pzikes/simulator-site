@@ -135,6 +135,62 @@ export function removeConnection(network, id) {
   return removed;
 }
 
+export function findPath(nodes, edges, sourceId, targetId) {
+  if (!Array.isArray(nodes) || !Array.isArray(edges)) {
+    throw new TypeError("Uzly a spojení musí být pole.");
+  }
+
+  const nodeIds = new Set(nodes.map(node => node?.id));
+  if (!nodeIds.has(sourceId) || !nodeIds.has(targetId)) {
+    return null;
+  }
+  if (sourceId === targetId) {
+    return [sourceId];
+  }
+
+  const adjacency = new Map(nodes.map(node => [node.id, []]));
+  for (const edge of edges) {
+    if (!adjacency.has(edge?.from) || !adjacency.has(edge?.to)) {
+      continue;
+    }
+    adjacency.get(edge.from).push(edge.to);
+    adjacency.get(edge.to).push(edge.from);
+  }
+
+  const queue = [sourceId];
+  const previous = new Map([[sourceId, null]]);
+  let queueIndex = 0;
+
+  while (queueIndex < queue.length) {
+    const currentId = queue[queueIndex];
+    queueIndex += 1;
+
+    for (const neighborId of adjacency.get(currentId)) {
+      if (previous.has(neighborId)) {
+        continue;
+      }
+
+      previous.set(neighborId, currentId);
+      if (neighborId === targetId) {
+        return buildPath(previous, targetId);
+      }
+      queue.push(neighborId);
+    }
+  }
+
+  return null;
+}
+
+function buildPath(previous, targetId) {
+  const path = [];
+  let currentId = targetId;
+  while (currentId !== null) {
+    path.push(currentId);
+    currentId = previous.get(currentId);
+  }
+  return path.reverse();
+}
+
 function assertNetwork(network) {
   if (
     !network

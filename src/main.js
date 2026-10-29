@@ -4,13 +4,17 @@ import {
   connectDevices,
   createNetwork,
   DEVICE_TYPES,
+  findPath,
   moveDevice,
   removeConnection,
   removeDevice,
 } from "./network.js";
 import {
+  animatePacket,
   renderConnections,
   renderDevices,
+  setPathHighlight,
+  setVisitedDevices,
   updateConnectionPositions,
   updateDeviceElement,
 } from "./render.js";
@@ -23,7 +27,13 @@ const network = createNetwork();
 const board = requireElement("#network-board");
 const connectionLayer = requireElement("#connection-layer");
 const deviceLayer = requireElement("#device-layer");
+const packetLayer = requireElement("#packet-layer");
 const nameInput = requireElement("#device-name");
+const packetSource = requireElement("#packet-source");
+const packetTarget = requireElement("#packet-target");
+const sendPacketButton = requireElement("#send-packet-button");
+const cancelPacketButton = requireElement("#cancel-packet-button");
+const packetExplanation = requireElement("#packet-explanation");
 const connectionModeButton = requireElement("#connection-mode-button");
 const connectionModeHelp = requireElement("#connection-mode-help");
 const deleteConnectionButton = requireElement("#delete-connection-button");
@@ -40,6 +50,8 @@ let selectedConnectionId = null;
 let connectionMode = false;
 let pendingConnectionStartId = null;
 let dragState = null;
+let cancelPacketTransfer = null;
+let packetTransferActive = false;
 
 document.querySelectorAll("[data-add-type]").forEach(button => {
   button.addEventListener("click", () => addDeviceFromPanel(button.dataset.addType));
@@ -52,6 +64,10 @@ document.querySelectorAll("[data-move]").forEach(button => {
 deleteButton.addEventListener("click", deleteSelectedDevice);
 connectionModeButton.addEventListener("click", () => toggleConnectionMode());
 deleteConnectionButton.addEventListener("click", deleteSelectedConnection);
+sendPacketButton.addEventListener("click", sendPacket);
+cancelPacketButton.addEventListener("click", cancelCurrentPacketTransfer);
+packetSource.addEventListener("change", updatePacketControls);
+packetTarget.addEventListener("change", updatePacketControls);
 board.addEventListener("pointerdown", handlePointerDown);
 board.addEventListener("pointermove", handlePointerMove);
 board.addEventListener("pointerup", finishPointerMove);
@@ -78,6 +94,9 @@ function addDeviceFromPanel(type) {
   const name = requestedName || nextDefaultName(type);
   try {
     const device = addDevice(network, { type, name, ...position });
+    if (network.nodes.length === 2 && packetSource.value === packetTarget.value) {
+      packetTarget.value = device.id;
+    }
     selectedDeviceId = device.id;
     nameInput.value = "";
     render();
@@ -107,7 +126,7 @@ function nextDefaultName(type) {
 }
 
 function handlePointerDown(event) {
-  if (event.button !== 0 || !event.isPrimary) {
+  if (packetTransferActive || event.button !== 0 || !event.isPrimary) {
     return;
   }
 
@@ -198,6 +217,10 @@ function screenToSvg(clientX, clientY) {
 }
 
 function handleBoardKeyDown(event) {
+  if (packetTransferActive) {
+    return;
+  }
+
   const connectionElement = getConnectionElement(event.target);
   if (connectionElement) {
     if (event.key === "Enter" || event.key === " ") {
@@ -263,6 +286,10 @@ function handleBoardKeyDown(event) {
 }
 
 function handleBoardClick(event) {
+  if (packetTransferActive) {
+    return;
+  }
+
   const connectionElement = getConnectionElement(event.target);
   if (connectionElement) {
     if (connectionMode) {
@@ -446,7 +473,7 @@ function updateConnectionSelection() {
     element.classList.toggle("is-selected", selected);
     element.setAttribute("aria-pressed", String(selected));
   });
-  deleteConnectionButton.disabled = !selectedConnectionId || connectionMode;
+  deleteConnectionButton.disabled = packetTransferActive || !selectedConnectionId || connectionMode;
 }
 
 function updateSelectionPanel() {
@@ -454,9 +481,9 @@ function updateSelectionPanel() {
   const isSelected = Boolean(device);
   selectionEmpty.hidden = isSelected;
   selectionDetails.hidden = !isSelected;
-  deleteButton.disabled = !isSelected;
+  deleteButton.disabled = packetTransferActive || !isSelected;
   document.querySelectorAll("[data-move]").forEach(button => {
-    button.disabled = !isSelected;
+    button.disabled = packetTransferActive || !isSelected;
   });
 
   if (device) {
@@ -473,8 +500,10 @@ function updateSelectionDetails(device) {
 function render() {
   renderConnections(connectionLayer, network, selectedConnectionId);
   renderDevices(deviceLayer, network, selectedDeviceId);
+  updatePacketEndpoints();
   updateConnectionSelection();
   updateSelectionPanel();
+  updatePacketControls();
 }
 
 function getDevice(id) {
@@ -503,6 +532,121 @@ function showStatus(message) {
 function showError(message) {
   statusMessage.textContent = message;
   statusMessage.classList.add("is-error");
+}
+
+function updatePacketEndpoints() {
+  const previousSource = packetSource.value;
+  const previousTarget = packetTarget.value;
+  const options = network.nodes.map(device => {
+    const option = document.createElement("option");
+    option.value = device.id;
+    option.textContent = `${device.name} — ${DEVICE_TYPES[device.type]}`;
+    return option;
+  });
+  packetSource.replaceChildren(...options.map(option => option.cloneNode(true)));
+  packetTarget.replaceChildren(...options);
+
+  const nodeIds = new Set(network.nodes.map(device => device.id));
+  packetSource.value = nodeIds.has(previousSource)
+    ? previousSource
+    : network.nodes[0]?.id ?? "";
+  packetTarget.value = nodeIds.has(previousTarget)
+    ? previousTarget
+    : network.nodes[1]?.id ?? network.nodes[0]?.id ?? "";
+}
+
+function updatePacketControls() {
+  document.querySelectorAll("[data-add-type]").forEach(button => {
+    button.disabled = packetTransferActive;
+  });
+  document.querySelectorAll("[data-move]").forEach(button => {
+    button.disabled = packetTransferActive || !getDevice(selectedDeviceId);
+  });
+  deleteButton.disabled = packetTransferActive || !getDevice(selectedDeviceId);
+  connectionModeButton.disabled = packetTransferActive;
+  deleteConnectionButton.disabled =
+    packetTransferActive || !selectedConnectionId || connectionMode;
+  packetSource.disabled = packetTransferActive;
+  packetTarget.disabled = packetTransferActive;
+  sendPacketButton.disabled =
+    packetTransferActive || !packetSource.value || !packetTarget.value;
+  cancelPacketButton.hidden = !packetTransferActive;
+  cancelPacketButton.disabled = !packetTransferActive;
+}
+
+function sendPacket() {
+  if (packetTransferActive) {
+    return;
+  }
+
+  const source = getDevice(packetSource.value);
+  const target = getDevice(packetTarget.value);
+  if (!source || !target) {
+    showError("Vyber platného odesílatele i příjemce.");
+    return;
+  }
+
+  if (source.id === target.id) {
+    packetExplanation.textContent =
+      `Odesílatel a příjemce jsou stejné zařízení „${source.name}“. Paket nikam necestuje.`;
+    showStatus("Odesílatel a příjemce jsou stejní; přenos není potřeba.");
+    return;
+  }
+
+  const path = findPath(network.nodes, network.edges, source.id, target.id);
+  if (!path) {
+    packetExplanation.textContent =
+      `Mezi „${source.name}“ a „${target.name}“ není v aktuálním grafu cesta. Zkontroluj kabelová spojení.`;
+    showError("Paket nelze doručit: mezi vybranými zařízeními není cesta.");
+    return;
+  }
+
+  const visitedDevices = [];
+  const visitedIds = [];
+  packetTransferActive = true;
+  setPathHighlight(connectionLayer, network.edges, path, true);
+  setVisitedDevices(deviceLayer, []);
+  updatePacketControls();
+  packetExplanation.textContent = "Paket začíná cestu po nejkratší nalezené trase.";
+  showStatus(`Odesílám paket ze zařízení „${source.name}“.`);
+
+  try {
+    cancelPacketTransfer = animatePacket(packetLayer, network.nodes, network.edges, path, {
+      onVisit(device, pathIndex) {
+        visitedDevices.push(`${device.name} (${DEVICE_TYPES[device.type]})`);
+        visitedIds.push(device.id);
+        setVisitedDevices(deviceLayer, visitedIds);
+        packetExplanation.textContent =
+          `Navštívená zařízení (${pathIndex + 1}/${path.length}): ${visitedDevices.join(" → ")}.`;
+        showStatus(`Paket dorazil k zařízení „${device.name}“.`);
+      },
+      onComplete({ cancelled }) {
+        cancelPacketTransfer = null;
+        packetTransferActive = false;
+        setPathHighlight(connectionLayer, network.edges, path, false);
+        setVisitedDevices(deviceLayer, []);
+        updatePacketControls();
+        if (cancelled) {
+          packetExplanation.textContent = "Přenos byl přerušen.";
+          showStatus("Přenos paketu byl přerušen.");
+        } else {
+          packetExplanation.textContent =
+            `Paket dorazil k příjemci „${target.name}“. Navštívená zařízení: ${visitedDevices.join(" → ")}.`;
+          showStatus(`Paket byl doručen zařízení „${target.name}“.`);
+        }
+      },
+    });
+  } catch (error) {
+    packetTransferActive = false;
+    setPathHighlight(connectionLayer, network.edges, path, false);
+    setVisitedDevices(deviceLayer, []);
+    updatePacketControls();
+    showError(error.message);
+  }
+}
+
+function cancelCurrentPacketTransfer() {
+  cancelPacketTransfer?.();
 }
 
 function requireElement(selector) {

@@ -70,6 +70,16 @@ h1 {
   line-height: 1.55;
 }
 
+.simulation-note {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-left: 4px solid #d97706;
+  border-radius: 6px;
+  background: #fffbeb;
+  color: #78350f;
+  line-height: 1.5;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
@@ -129,6 +139,15 @@ h1 {
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.52;
+}
+
+.button-primary {
+  background: #4338ca;
+  color: #fff;
+}
+
+.button-primary:hover:not(:disabled) {
+  background: #3730a3;
 }
 
 .button-add {
@@ -192,6 +211,46 @@ h1 {
   margin-top: 24px;
   padding-top: 20px;
   border-top: 1px solid #e2e8f0;
+}
+
+.packet-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.packet-controls h2 {
+  margin-bottom: 4px;
+}
+
+.packet-controls label {
+  margin-bottom: -4px;
+  font-weight: 650;
+}
+
+.packet-controls select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+}
+
+.packet-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.packet-explanation {
+  margin: 4px 0 0;
+  color: #475569;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .selection h2 {
@@ -343,6 +402,24 @@ h1 {
 
 .connection:focus {
   outline: none;
+}
+
+.connection.is-on-path .connection-line {
+  stroke: #0891b2;
+  stroke-width: 9;
+}
+
+.device.is-packet-visited .device-card {
+  stroke: #0891b2;
+  stroke-width: 4;
+}
+
+.packet-marker {
+  fill: #e11d48;
+  stroke: #fff;
+  stroke-width: 3;
+  filter: drop-shadow(0 2px 3px rgb(15 23 42 / 35%));
+  pointer-events: none;
 }
 
 .device {

@@ -19,6 +19,10 @@
         <p class="intro">
           Přidej zařízení na pracovní plochu, vyber je a uspořádej svou síť.
         </p>
+        <p class="simulation-note">
+          <strong>Zjednodušený model:</strong> paket hledá cestu v neorientovaném grafu.
+          Nejde o úplnou simulaci síťových protokolů; neřeší například IP ani MAC adresy.
+        </p>
       </header>
 
       <div class="workspace">
@@ -74,6 +78,25 @@
             >
               Odstranit vybraný kabel
             </button>
+          </section>
+
+          <section class="packet-controls" aria-labelledby="packet-heading">
+            <h2 id="packet-heading">Přenos paketu</h2>
+            <label for="packet-source">Odesílatel</label>
+            <select id="packet-source"></select>
+            <label for="packet-target">Příjemce</label>
+            <select id="packet-target"></select>
+            <div class="packet-actions">
+              <button id="send-packet-button" class="button button-primary" type="button" disabled>
+                Odeslat paket
+              </button>
+              <button id="cancel-packet-button" class="button button-danger" type="button" hidden>
+                Přerušit přenos
+              </button>
+            </div>
+            <p id="packet-explanation" class="packet-explanation" role="status" aria-live="polite">
+              Přidej zařízení a propojení, potom zvol odesílatele a příjemce.
+            </p>
           </section>
 
           <section class="selection" aria-labelledby="selection-heading">
@@ -137,6 +160,7 @@
             <rect class="board-background" x="0" y="0" width="1000" height="600"></rect>
             <g id="connection-layer"></g>
             <g id="device-layer"></g>
+            <g id="packet-layer" aria-hidden="true"></g>
           </svg>
           <p id="keyboard-help" class="keyboard-help">
             Klávesnice: Tab přejde na zařízení, Enter nebo mezerník ho vybere,
