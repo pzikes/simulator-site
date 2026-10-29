@@ -114,9 +114,14 @@ export function connectDevices(network, firstDeviceId, secondDeviceId) {
     throw new RangeError("Tato zařízení už jsou propojena.");
   }
 
-  nextConnectionId += 1;
+  let connectionId;
+  do {
+    nextConnectionId += 1;
+    connectionId = `connection-${nextConnectionId}`;
+  } while (network.edges.some(edge => edge.id === connectionId));
+
   const connection = {
-    id: `connection-${nextConnectionId}`,
+    id: connectionId,
     from: firstDeviceId,
     to: secondDeviceId,
   };

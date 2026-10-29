@@ -18,6 +18,7 @@ import {
   updateConnectionPositions,
   updateDeviceElement,
 } from "./render.js";
+import { loadNetwork, saveNetwork } from "./persistence.js";
 
 const MOVE_STEP = 20;
 const GRID_COLUMNS = [110, 305, 500, 695, 890];
@@ -29,6 +30,8 @@ const connectionLayer = requireElement("#connection-layer");
 const deviceLayer = requireElement("#device-layer");
 const packetLayer = requireElement("#packet-layer");
 const nameInput = requireElement("#device-name");
+const saveNetworkButton = requireElement("#save-network-button");
+const loadNetworkButton = requireElement("#load-network-button");
 const packetSource = requireElement("#packet-source");
 const packetTarget = requireElement("#packet-target");
 const sendPacketButton = requireElement("#send-packet-button");
@@ -52,6 +55,7 @@ let pendingConnectionStartId = null;
 let dragState = null;
 let cancelPacketTransfer = null;
 let packetTransferActive = false;
+let savedNetworkSnapshot = serializeNetwork();
 
 document.querySelectorAll("[data-add-type]").forEach(button => {
   button.addEventListener("click", () => addDeviceFromPanel(button.dataset.addType));
@@ -62,6 +66,8 @@ document.querySelectorAll("[data-move]").forEach(button => {
 });
 
 deleteButton.addEventListener("click", deleteSelectedDevice);
+saveNetworkButton.addEventListener("click", saveCurrentNetwork);
+loadNetworkButton.addEventListener("click", loadSavedNetwork);
 connectionModeButton.addEventListener("click", () => toggleConnectionMode());
 deleteConnectionButton.addEventListener("click", deleteSelectedConnection);
 sendPacketButton.addEventListener("click", sendPacket);
@@ -188,6 +194,7 @@ function handlePointerMove(event) {
     updateDeviceElement(dragState.element, device, true);
     updateConnectionPositions(connectionLayer, network);
     updateSelectionDetails(device);
+    updateSaveButton();
   } catch (error) {
     finishPointerMove(event);
     showError(error.message);
@@ -360,6 +367,7 @@ function handleConnectionEndpoint(id) {
     selectedConnectionId = null;
     renderConnections(connectionLayer, network, selectedConnectionId);
     updateConnectionSelection();
+    updateSaveButton();
     showStatus(`Kabel mezi „${start.name}“ a „${device.name}“ byl vytvořen.`);
   } catch (error) {
     showError(error.message);
@@ -440,6 +448,7 @@ function deleteSelectedConnection() {
     selectedConnectionId = null;
     renderConnections(connectionLayer, network, selectedConnectionId);
     updateConnectionSelection();
+    updateSaveButton();
     showStatus(`Kabel mezi „${from.name}“ a „${to.name}“ byl odstraněn.`);
   } catch (error) {
     showError(error.message);
@@ -504,6 +513,7 @@ function render() {
   updateConnectionSelection();
   updateSelectionPanel();
   updatePacketControls();
+  updateSaveButton();
 }
 
 function getDevice(id) {
@@ -564,6 +574,8 @@ function updatePacketControls() {
   });
   deleteButton.disabled = packetTransferActive || !getDevice(selectedDeviceId);
   connectionModeButton.disabled = packetTransferActive;
+  saveNetworkButton.disabled = packetTransferActive;
+  loadNetworkButton.disabled = packetTransferActive;
   deleteConnectionButton.disabled =
     packetTransferActive || !selectedConnectionId || connectionMode;
   packetSource.disabled = packetTransferActive;
@@ -572,6 +584,64 @@ function updatePacketControls() {
     packetTransferActive || !packetSource.value || !packetTarget.value;
   cancelPacketButton.hidden = !packetTransferActive;
   cancelPacketButton.disabled = !packetTransferActive;
+}
+
+function serializeNetwork() {
+  return JSON.stringify({ nodes: network.nodes, edges: network.edges });
+}
+
+function updateSaveButton() {
+  saveNetworkButton.disabled = packetTransferActive || serializeNetwork() === savedNetworkSnapshot;
+}
+
+function saveCurrentNetwork() {
+  const result = saveNetwork(network);
+  if (!result.ok) {
+    showError(getStorageErrorMessage(result.error, "uložit"));
+    return;
+  }
+  savedNetworkSnapshot = serializeNetwork();
+  updateSaveButton();
+  showStatus("Uložení dokončeno: síť byla uložena v tomto prohlížeči.");
+}
+
+function loadSavedNetwork() {
+  const result = loadNetwork();
+  if (!result.ok) {
+    showError(getStorageErrorMessage(result.error, "načíst"));
+    return;
+  }
+
+  network.nodes.splice(0, network.nodes.length, ...result.network.nodes);
+  network.edges.splice(0, network.edges.length, ...result.network.edges);
+  selectedDeviceId = null;
+  selectedConnectionId = null;
+  packetSource.value = "";
+  packetTarget.value = "";
+  pendingConnectionStartId = null;
+  connectionMode = false;
+  connectionModeButton.setAttribute("aria-pressed", "false");
+  connectionModeButton.textContent = "Zapnout režim propojení";
+  connectionModeHelp.textContent = "Zapni režim, potom vyber dvě různá zařízení.";
+  packetLayer.replaceChildren();
+  setVisitedDevices(deviceLayer, []);
+  packetExplanation.textContent =
+    "Síť byla načtena. Zvol odesílatele a příjemce pro přenos paketu.";
+  savedNetworkSnapshot = serializeNetwork();
+  render();
+  showStatus("Načtení dokončeno: uložená síť byla obnovena.");
+}
+
+function getStorageErrorMessage(error, action) {
+  const messages = {
+    unavailable: "Místní úložiště není v tomto prohlížeči dostupné.",
+    "invalid-network": "Aktuální síť nemá platná data a nelze ji uložit.",
+    "write-failed": "Síť se nepodařilo uložit. Zkontroluj oprávnění a volné místo v úložišti.",
+    "read-failed": "Z místního úložiště se nepodařilo přečíst uloženou síť.",
+    "not-found": "V tomto prohlížeči zatím není uložená žádná síť.",
+    corrupt: "Uložená síť je poškozená nebo má nepodporovaný formát.",
+  };
+  return messages[error] ?? `Síť se nepodařilo ${action}.`;
 }
 
 function sendPacket() {
