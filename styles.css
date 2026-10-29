@@ -341,6 +341,10 @@ h1 {
   stroke-width: 8;
 }
 
+.connection:focus {
+  outline: none;
+}
+
 .device {
   cursor: grab;
   touch-action: none;
